@@ -1,33 +1,47 @@
 name: Update live.json from Google Sheet
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:           # Elle tetikleme
   schedule:
-    - cron: '*/30 * * * *'   # ⏱ her 30 dakikada bir otomatik çalışır (istersen 15 veya 60 yapabiliriz)
+    - cron: '*/10 * * * *'     # Her 10 dakikada bir (UTC)
 
 permissions:
-  contents: write   # ✅ Push izni burada veriliyor
+  contents: write              # Commit/push için gerekli
+
+concurrency:
+  group: update-live
+  cancel-in-progress: false
+
 jobs:
-  build:
+  update:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install deps
-        run: npm i node-fetch@3
-
-      - name: Generate live.json
-        env:
-          SHEET_TSV_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQvj3Rq3R1Q2kpXiBoF1_bN46Ag0Ly5KZgZJmTfFLYy5nWb2XK9kH3DB3CbbJ9RqVm1A_YRv620BV1P/pub?gid=1679302956&single=true&output=tsv"
+      - name: Fetch TSV from Google Sheet
         run: |
-          node scripts/update.js
+          mkdir -p data
+          curl -fsSL "https://docs.google.com/spreadsheets/d/e/2PACX-1vQvj3Rq3R1Q2kpXiBoF1_bN46Ag0Ly5KZgZJmTfFLYy5nWb2XK9kH3DB3CbbJ9RqVm1A_YRv620BV1P/pub?gid=1679302956&single=true&output=tsv" -o /tmp/live.tsv
+
+      - name: Convert TSV to JSON
+        run: |
+          python3 - << 'PY'
+          import csv, json
+          rows=[]
+          with open('/tmp/live.tsv','r',encoding='utf-8') as f:
+              reader=csv.DictReader(f, delimiter='\t')
+              for r in reader:
+                  rows.append({(k or '').strip(): (v or '').strip() for k,v in r.items()})
+          out={'ok': True, 'rows': rows}
+          with open('data/live.json','w',encoding='utf-8') as f:
+              json.dump(out, f, ensure_ascii=False)
+          print(f"Wrote {len(rows)} rows to data/live.json")
+          PY
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: update live.json from Sheet"
           file_pattern: data/live.json
+          commit_message: "chore: update live.json from Sheet"
