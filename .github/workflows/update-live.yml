@@ -1,11 +1,12 @@
 name: Update live.json from Google Sheet
 
 on:
+  workflow_dispatch:
   schedule:
-    # UTC çalışır. 09:00–23:59 TRT (UTC+3) ≈ 06:00–20:59 UTC
-    - cron: "*/5 6-20 * * *"     # her 5 dakikada bir
-  workflow_dispatch: {}          # manuel tetikleme
+    - cron: '*/30 * * * *'   # ⏱ her 30 dakikada bir otomatik çalışır (istersen 15 veya 60 yapabiliriz)
 
+permissions:
+  contents: write   # ✅ Push izni burada veriliyor
 jobs:
   build:
     runs-on: ubuntu-latest
