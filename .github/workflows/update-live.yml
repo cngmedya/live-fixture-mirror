@@ -1,47 +1,42 @@
 name: Update live.json from Google Sheet
 
 on:
-  workflow_dispatch:           # Elle tetikleme
+  workflow_dispatch: {}
   schedule:
-    - cron: '*/10 * * * *'     # Her 10 dakikada bir (UTC)
+    # UTC çalışır. Aşağıdaki 5 dakikada bir, 06:00–23:59 TRT (UTC+3) eşleniği:
+    - cron: "*/5 3-20 * * *"
 
 permissions:
-  contents: write              # Commit/push için gerekli
+  contents: write
 
 concurrency:
-  group: update-live
+  group: live-json
   cancel-in-progress: false
 
 jobs:
-  update:
+  pull-sheet:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch TSV from Google Sheet
+      - name: Fetch TSV (public Sheet)
         run: |
-          mkdir -p data
-          curl -fsSL "https://docs.google.com/spreadsheets/d/e/2PACX-1vQvj3Rq3R1Q2kpXiBoF1_bN46Ag0Ly5KZgZJmTfFLYy5nWb2XK9kH3DB3CbbJ9RqVm1A_YRv620BV1P/pub?gid=1679302956&single=true&output=tsv" -o /tmp/live.tsv
+          curl -fsSL "${{ secrets.SHEET_TSV_URL }}" -o /tmp/live.tsv
 
-      - name: Convert TSV to JSON
+      - name: Convert TSV → JSON
         run: |
-          python3 - << 'PY'
-          import csv, json
-          rows=[]
-          with open('/tmp/live.tsv','r',encoding='utf-8') as f:
-              reader=csv.DictReader(f, delimiter='\t')
-              for r in reader:
-                  rows.append({(k or '').strip(): (v or '').strip() for k,v in r.items()})
-          out={'ok': True, 'rows': rows}
-          with open('data/live.json','w',encoding='utf-8') as f:
-              json.dump(out, f, ensure_ascii=False)
-          print(f"Wrote {len(rows)} rows to data/live.json")
-          PY
+          node -e '
+          const fs=require("fs");
+          const txt=fs.readFileSync("/tmp/live.tsv","utf8").trim();
+          const [hdr,...rows]=txt.split(/\r?\n/).map(l=>l.split("\t"));
+          const out=rows.map(r=>Object.fromEntries(hdr.map((h,i)=>[h, r[i]??""])));
+          fs.mkdirSync("data",{recursive:true});
+          fs.writeFileSync("data/live.json", JSON.stringify(out));
+          '
 
       - name: Commit & push if changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          file_pattern: data/live.json
           commit_message: "chore: update live.json from Sheet"
+          file_pattern: data/live.json
